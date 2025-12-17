@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-
 using Microsoft.EntityFrameworkCore;
 using VaderProjekt.Core.Entities;
 using VaderProjekt.Core.Models;
@@ -16,28 +15,32 @@ namespace VaderProjekt.UI
     {
         private static void Main()
         {
+            // För att kunna skriva ut svenska tecken i konsolen (ÅÄÖ)
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
             Console.WriteLine("====================================");
-            Console.WriteLine("        VÄDERPROJEKT (Console)       ");
+            Console.WriteLine("           VÄDERPROJEKT             ");
             Console.WriteLine("====================================\n");
 
+            // Hitta CSV-fil på typiska platser (output, current directory, projektmapp)
             var csvPath = HittaCsvFil();
             if (csvPath is null)
             {
-                Console.WriteLine("Hittar inte TempFuktData.csv.\n" +
-                                  "Lägg filen i samma mapp som exe-filen, eller i projektmappen VäderProjekt.UI.");
+                Console.WriteLine("Hittar inte TempFuktData.csv.");
+                Console.WriteLine("Lägg filen i samma mapp som exe-filen eller i projektmappen för UI.");
                 Avsluta();
                 return;
             }
 
+            // Skapa DB + seed:a bara om DB är tom
             using var db = new VaderContext();
             DatabaseInitializer.EnsureCreatedAndSeeded(db, csvPath);
 
+            // Läs in all data som en lista (UI arbetar på minnesdata)
             var alla = db.VaderDataTabell.AsNoTracking().ToList();
-
             Console.WriteLine($"Databas klar. Antal mätningar: {alla.Count:N0}\n");
 
+            // Enkel menyloop
             while (true)
             {
                 SkrivMeny();
@@ -104,7 +107,11 @@ namespace VaderProjekt.UI
             if (datum is null) return;
 
             var plats = FragaPlats();
-            if (plats is null) return;
+            if (plats is null)
+            {
+                Console.WriteLine("Ogiltig plats. Välj 1 eller 2.");
+                return;
+            }
 
             var medel = VaderAnalys.MedelTemperaturForDatum(alla, datum.Value, plats);
             if (medel is null)
@@ -119,19 +126,27 @@ namespace VaderProjekt.UI
         private static void Meny_SorteraMedeltemp(List<VaderData> alla)
         {
             var plats = FragaPlats();
-            if (plats is null) return;
+            if (plats is null)
+            {
+                Console.WriteLine("Ogiltig plats. Välj 1 eller 2.");
+                return;
+            }
 
             Console.Write("Sortera varmast först? (j/n): ");
             var varmastForst = SvarJaNej(defaultYes: true);
 
             var lista = VaderAnalys.SorteraDagarEfterMedelTemp(alla, plats, varmastForst);
-            SkrivTopplista(lista, rubrik: $"Medeltemp per dag ({plats})", antal: 10);
+            SkrivTopplista(lista, rubrik: $"Medeltemp per dag ({plats})", antal: 10, enhet: "°C");
         }
 
         private static void Meny_SorteraMedelFukt(List<VaderData> alla)
         {
             var plats = FragaPlats();
-            if (plats is null) return;
+            if (plats is null)
+            {
+                Console.WriteLine("Ogiltig plats. Välj 1 eller 2.");
+                return;
+            }
 
             Console.Write("Sortera torrast först? (j/n): ");
             var torrastForst = SvarJaNej(defaultYes: true);
@@ -143,7 +158,11 @@ namespace VaderProjekt.UI
         private static void Meny_SorteraMogelRisk(List<VaderData> alla)
         {
             var plats = FragaPlats();
-            if (plats is null) return;
+            if (plats is null)
+            {
+                Console.WriteLine("Ogiltig plats. Välj 1 eller 2.");
+                return;
+            }
 
             Console.Write("Sortera minst risk först? (j/n): ");
             var minstForst = SvarJaNej(defaultYes: true);
@@ -154,18 +173,20 @@ namespace VaderProjekt.UI
 
         private static void Meny_MeteorologiskaArstider(List<VaderData> alla)
         {
+            // Årstider räknas på utomhusdata (dygnsmedel)
             var ute = alla.Where(x => x.Plats == "Ute");
 
             var host = MeteorologiskaArstider.HittaHostDatum(ute);
             var vinter = MeteorologiskaArstider.HittaVinterDatum(ute);
 
             Console.WriteLine("\nMeteorologiska årstider (ute, dygnsmedel):");
+
             Console.WriteLine(host is null
                 ? "- HÖST: hittades inte i mätperioden."
                 : $"- HÖST: {host:yyyy-MM-dd} (första av 5 dygn < 10°C)");
 
             Console.WriteLine(vinter is null
-                ? "- VINTER: hittades inte i mätperioden (kan vara mild vinter / för kort period)."
+                ? "- VINTER: hittades inte i mätperioden (mild vinter / för kort period)."
                 : $"- VINTER: {vinter:yyyy-MM-dd} (första av 5 dygn ≤ 0°C)");
         }
 
@@ -192,18 +213,17 @@ namespace VaderProjekt.UI
                 Console.WriteLine($"... ({lista.Count} dagar totalt)");
         }
 
-        private static void SkrivTopplista(IReadOnlyList<DagligtResultat> lista, string rubrik, int antal, string? enhet = null)
+        private static void SkrivTopplista(
+            IReadOnlyList<DagligtResultat> lista,
+            string rubrik,
+            int antal,
+            string enhet)
         {
             Console.WriteLine($"\n{rubrik}");
             Console.WriteLine(new string('-', rubrik.Length));
 
             foreach (var rad in lista.Take(antal))
-            {
-                if (string.IsNullOrWhiteSpace(enhet))
-                    Console.WriteLine($"{rad.Datum:yyyy-MM-dd}: {rad.Varde:F1}");
-                else
-                    Console.WriteLine($"{rad.Datum:yyyy-MM-dd}: {rad.Varde:F1} {enhet}");
-            }
+                Console.WriteLine($"{rad.Datum:yyyy-MM-dd}: {rad.Varde:F1} {enhet}");
 
             if (lista.Count > antal)
                 Console.WriteLine($"... ({lista.Count} dagar totalt)\n");
@@ -214,6 +234,7 @@ namespace VaderProjekt.UI
             Console.Write(prompt);
             var text = (Console.ReadLine() ?? string.Empty).Trim();
 
+            // Vi kräver YYYY-MM-DD för att undvika missförstånd
             if (DateTime.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
                 return d.Date;
 
@@ -225,6 +246,7 @@ namespace VaderProjekt.UI
         {
             Console.Write("Plats (1 = Ute, 2 = Inne): ");
             var text = (Console.ReadLine() ?? string.Empty).Trim();
+
             return text switch
             {
                 "1" => "Ute",
@@ -237,12 +259,13 @@ namespace VaderProjekt.UI
         {
             var s = (Console.ReadLine() ?? string.Empty).Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(s)) return defaultYes;
+
             return s is "j" or "ja" or "y" or "yes";
         }
 
         private static string? HittaCsvFil()
         {
-            // 1) Vanligaste: filen kopieras till bin-katalogen via csproj (CopyToOutputDirectory)
+            // 1) Vanligast: filen kopieras till output via csproj (CopyToOutputDirectory)
             var p1 = System.IO.Path.Combine(AppContext.BaseDirectory, "TempFuktData.csv");
             if (System.IO.File.Exists(p1)) return p1;
 
@@ -250,7 +273,7 @@ namespace VaderProjekt.UI
             var p2 = System.IO.Path.Combine(Environment.CurrentDirectory, "TempFuktData.csv");
             if (System.IO.File.Exists(p2)) return p2;
 
-            // 3) Testa relativ sökväg om man kör från bin/Debug/... och csv ligger i projektmappen
+            // 3) Relativ sökväg från bin/Debug/... tillbaka till projektmappen
             var p3 = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "TempFuktData.csv"));
             if (System.IO.File.Exists(p3)) return p3;
 
