@@ -22,11 +22,7 @@ Detta repo innehåller en konsolbaserad applikation som läser **temperatur- och
 ## Reset av databas
 Om du vill köra om från start: ta bort filen `vaderprojekt.sqlite` som skapas i samma mapp som exe-filen (bin-katalogen).
 
-## VG-funktioner
+## funktioner
 I menyn finns två extra val:
 - Dagar då inne/ute skiljer sig **mest/minst** (medel av |Inne-Ute| per minut)
 - Uppskattning av hur länge **balkongdörren** står öppen per dag (heuristik baserat på snabb ändring inne/ute)
-
-## Loggbok & reflektion
-- `Loggbok.md` – fyll i vad du gjort dag för dag.
-- `Reflektion.md` – personlig reflektion (krav för VG).
