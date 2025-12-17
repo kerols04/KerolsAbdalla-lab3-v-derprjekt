@@ -4,29 +4,35 @@ using VaderProjekt.Core.Entities;
 namespace VaderProjekt.DataAccess
 {
     /// <summary>
-    /// DbContext för väderprojektet. Code First (EF) skapar databasen automatiskt.
-    /// Vi använder SQLite för att det ska vara lätt att köra på vilken dator som helst.
+    /// DbContext för Väderprojektet.
+    /// Code First: databasen skapas automatiskt vid första körningen.
+    /// Vi använder SQLite så projektet fungerar enkelt på alla datorer.
     /// </summary>
     public sealed class VaderContext : DbContext
     {
-        public DbSet<VaderData> VaderDataTabell { get; set; }
+        // Tabell med alla mätningar (en rad = en mätpunkt från CSV)
+        public DbSet<VaderData> VaderDataTabell => Set<VaderData>();
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            // Databasfilen hamnar i programmets arbetskatalog (t.ex. bin/Debug/...)
+            // Databasfil i programmets arbetskatalog.
             // Namnet innehåller "vaderprojekt" enligt uppgiftskravet.
             optionsBuilder.UseSqlite("Data Source=vaderprojekt.sqlite");
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // Sätt ett tydligt tabellnamn
             modelBuilder.Entity<VaderData>().ToTable("VaderData");
-            modelBuilder.Entity<VaderData>().Property(v => v.Plats).IsRequired();
 
-            // Hjälper mot dubbletter i data (samma tidpunkt+plats bör vara unik).
+            // Plats måste vara ifylld ("Ute" eller "Inne")
             modelBuilder.Entity<VaderData>()
-                .HasIndex(v => new { v.Datum, v.Plats })
-                .IsUnique(false);
+                .Property(v => v.Plats)
+                .IsRequired();
+
+            // Index för snabbare sökning/sortering (utan att riskera insert-fel på dubbletter).
+            modelBuilder.Entity<VaderData>()
+                .HasIndex(v => new { v.Datum, v.Plats });
         }
     }
 }
