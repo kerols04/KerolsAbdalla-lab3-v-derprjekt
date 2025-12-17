@@ -10,10 +10,11 @@ namespace VaderProjekt.DataAccess.Seeding
 {
     /// <summary>
     /// Skapar databasen om den inte finns och läser in CSV-data vid första körningen.
-    /// Filen är autentisk och kan innehålla datafel (t.ex. unicode-minus i temperatur).
+    /// CSV-filen är autentisk och kan innehålla fel/luckor → vi hoppar över trasiga rader istället för att krascha.
     /// </summary>
     public static class DatabaseInitializer
     {
+        // Vanliga datumformat som kan förekomma i filen
         private static readonly string[] DatumFormat =
         {
             "yyyy-MM-dd H:mm",
@@ -27,7 +28,7 @@ namespace VaderProjekt.DataAccess.Seeding
             // Skapa DB (Code First)
             db.Database.EnsureCreated();
 
-            // Om vi redan har data, gör ingenting.
+            // Om det redan finns data: seed inte igen
             if (db.VaderDataTabell.AsNoTracking().Any())
                 return;
 
@@ -35,7 +36,7 @@ namespace VaderProjekt.DataAccess.Seeding
             if (data.Count == 0)
                 return;
 
-            // Snabbare bulk-insert
+            // Lite snabbare insert när det är många rader
             db.ChangeTracker.AutoDetectChangesEnabled = false;
             db.VaderDataTabell.AddRange(data);
             db.SaveChanges();
@@ -43,10 +44,12 @@ namespace VaderProjekt.DataAccess.Seeding
         }
 
         /// <summary>
-        /// Läser TempFuktData.csv. Validerar + korrigerar uppenbara fel.
-        /// - Temperatur kan ibland ha "−" (unicode minus) istället för "-".
-        /// - Luftfuktighet klampas till 0..100.
-        /// - Orimliga temperaturer filtreras bort.
+        /// Läser TempFuktData.csv:
+        /// - Hoppar över header
+        /// - Klarar unicode-minus (−) i temperatur
+        /// - Klamp: RH 0..100
+        /// - Rimlighetsfilter: temp -50..60
+        /// - Undviker dubbletter (Datum+Plats)
         /// </summary>
         private static List<VaderData> ReadCsv(string csvPath)
         {
@@ -55,38 +58,45 @@ namespace VaderProjekt.DataAccess.Seeding
             if (!File.Exists(csvPath))
                 return list;
 
-            // För att undvika dubbletter.
+            // För att slippa lägga in samma mätning flera gånger
             var seen = new HashSet<(DateTime Datum, string Plats)>();
 
             foreach (var (line, index) in File.ReadLines(csvPath).Select((l, i) => (l, i)))
             {
-                if (index == 0) continue; // hoppa över header
+                if (index == 0) continue; // header
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
                 var parts = line.Split(',');
                 if (parts.Length < 4) continue;
 
-                if (!TryParseDatum(parts[0], out var datum)) continue;
+                // 1) Datum
+                if (!TryParseDatum(parts[0], out var datum))
+                    continue;
 
+                // 2) Plats (bara Ute/Inne accepteras)
                 var plats = (parts[1] ?? string.Empty).Trim();
-                if (plats is not ("Ute" or "Inne")) continue;
+                if (plats is not ("Ute" or "Inne"))
+                    continue;
 
+                // 3) Temperatur (kan ha unicode-minus)
                 var tempText = (parts[2] ?? string.Empty).Trim()
-                    .Replace('−', '-')  // unicode minus -> ASCII
+                    .Replace('−', '-')   // unicode minus → vanlig minus
                     .Replace(" ", "");
 
                 if (!double.TryParse(tempText, NumberStyles.Float, CultureInfo.InvariantCulture, out var temp))
                     continue;
 
-                // Rimlighetsintervall (uppgiften säger att data kan innehålla fel)
+                // Rimlighetsfilter (data kan innehålla fel)
                 if (temp < -50 || temp > 60)
                     continue;
 
+                // 4) Luftfuktighet
                 if (!int.TryParse((parts[3] ?? string.Empty).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var rh))
                     continue;
 
                 rh = Math.Clamp(rh, 0, 100);
 
+                // Dubblettskydd (samma tid + plats ska normalt bara finnas en gång)
                 var key = (datum, plats);
                 if (!seen.Add(key))
                     continue;
@@ -107,6 +117,7 @@ namespace VaderProjekt.DataAccess.Seeding
         {
             text = (text ?? string.Empty).Trim();
 
+            // Vi läser med invariant culture för att vara stabila oavsett datorns språk
             return DateTime.TryParseExact(
                 text,
                 DatumFormat,
